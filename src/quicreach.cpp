@@ -38,6 +38,7 @@ const uint32_t SupportedVersions[] = {QUIC_VERSION_1, QUIC_VERSION_2};
 const MsQuicVersionSettings VersionSettings(SupportedVersions, 2);
 
 struct ReachConfig {
+    bool IsServer {false};
     bool PrintStatistics {false};
     bool RequireAll {false};
     std::vector<const char*> HostNames;
@@ -197,6 +198,8 @@ bool ParseConfig(int argc, char **argv) {
 
         } else if (!strcmp(argv[i], "--version") || !strcmp(argv[i], "-v")) {
             printf("quicreach " QUICREACH_VERSION "\n");
+        } else if (!strcmp(argv[i], "--server") || !strcmp(argv[i], "-S")) {
+            Config.IsServer = true;
         }
     }
 
@@ -398,6 +401,17 @@ bool TestReachability() {
     return Config.RequireAll ? ((size_t)Results.ReachableCount == Config.HostNames.size()) : (Results.ReachableCount != 0);
 }
 
+
+struct Server {
+    int NumTimesCallbackInvoked;
+    Server(): NumTimesCallbackInvoked(0) {}
+    static QUIC_STATUS QUIC_API Callback(_In_ struct MsQuicListener*, _In_opt_ void* Context, _Inout_ QUIC_LISTENER_EVENT* Event) {
+        Server* This = (Server*)Context;
+        This->NumTimesCallbackInvoked++;
+        return QUIC_STATUS_SUCCESS;
+    }
+} GlobalServer;
+
 int QUIC_CALL main(int argc, char **argv) {
 
     if (!ParseConfig(argc, argv) || Config.HostNames.empty()) return 1;
@@ -407,11 +421,28 @@ int QUIC_CALL main(int argc, char **argv) {
         printf("MsQuicApi failed, 0x%x\n", MsQuic->GetInitStatus());
         return 1;
     }
+    // MsQuicSettings Settings;
+    // Settings.XdpEnabled = TRUE;
+    // Settings.QTIPEnabled = TRUE;
+    // Settings.SetGlobal();
 
-    bool Result = TestReachability();
-    if (!Config.PrintStatistics) {
-        printf("%s\n", Result ? "Success" : "Failure");
+    MsQuicRegistration Registration("quicreach");
+
+    if (Config.IsServer) {
+        MsQuicListener Listener(Registration, CleanUpAutoDelete, Server::Callback, &GlobalServer);
+        if (!Listener.IsValid()) {
+            printf("Listener initialization failed!\n");
+            return 1;
+        }
+        QUIC_ADDR Address = {0};
+        Address.si_family = AF_INET;
+        Address.Ipv4.sin_port = htons(Config.Port);
+        Address.
+        Listener.Start(Config.Alpn, );
+    } else {
+
     }
+
     delete MsQuic;
-    return Result ? 0 : 1;
+    return 0;
 }
